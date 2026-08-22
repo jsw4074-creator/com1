@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -eo pipefail
 
 echo "========================================"
 echo " com1 새 PC 자동 설치 시작"
