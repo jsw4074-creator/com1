@@ -1,0 +1,5 @@
+index,x,y,mode,is_marker,pattern,tick
+0,0.0,5.5,V,False,corner_TL,0
+1,3.0,5.5,V,False,corner_TL,31
+2,6.0,5.5,H,False,corner_TL,62
+3,6.0,8.5,H,True,corner_TL,93

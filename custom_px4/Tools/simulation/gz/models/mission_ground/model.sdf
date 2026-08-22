@@ -1,0 +1,23 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <model name="mission_ground">
+    <static>true</static>
+    <link name="link">
+      <pose>0 0 0 1.5708 0 4.712</pose> 
+
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>model://mission_ground/meshes/mision ground.stl</uri>
+            <scale>0.001 0.001 0.001</scale>
+          </mesh>
+        </geometry>
+       <material>
+    	<ambient>1 1 1 1</ambient>
+   	 <diffuse>1 1 1 1</diffuse>
+    	<specular>1 1 1 1</specular>
+       </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
