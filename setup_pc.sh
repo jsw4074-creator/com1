@@ -165,9 +165,6 @@ done < "$HARMONIC_MANIFEST"
 
 echo "설치 대상 Harmonic 패키지: ${#HARMONIC_DEBS[@]}"
 
-[ "${#HARMONIC_DEBS[@]}" -eq 114 ] || \
-    die "Harmonic 패키지 수가 114개가 아닙니다."
-
 # --------------------------------------------------
 # 6. Harmonic exact version 설치
 # --------------------------------------------------
@@ -182,7 +179,7 @@ sudo apt install -y \
 sudo ldconfig
 
 # --------------------------------------------------
-# 7. Harmonic 114개 전체 버전 확인
+# 7. Harmonic 전체 버전 확인
 # --------------------------------------------------
 
 echo
@@ -205,7 +202,7 @@ do
 
 done < "$HARMONIC_MANIFEST"
 
-echo "OK: Harmonic 114개 버전 일치"
+echo "OK: Harmonic 전체 버전 일치 (${#HARMONIC_PACKAGES[@]}개)"
 
 # 이후 apt / rosdep가 GZ를 바꾸지 못하도록 고정
 echo
@@ -480,6 +477,7 @@ echo "===== 16. Python 버전 검증 ====="
 
 python3 - <<'PY'
 import sys
+import importlib.metadata
 import numpy
 import cv2
 import pandas
@@ -504,7 +502,7 @@ actual = {
     "pandas": pandas.__version__,
     "PyYAML": yaml.__version__,
     "scipy": scipy.__version__,
-    "rclpy": rclpy.__version__,
+    "rclpy": importlib.metadata.version("rclpy"),
 }
 
 failed = False

@@ -193,11 +193,14 @@ fa1b5107173c495c58fe99a61c5ca25dfe36bb59cc48f456a6a42274a185fe14  libgz-transpor
 0ac7e2d022ece40771598b1a467d6f53afc0b09b6f7a196f9f9c2a1ef30308c8  libgz-utils2_2.2.1-1~jammy_amd64.deb
 056552caa718ce4bf3e53618561740a14c4485a83429796452deb8960fa5fc9d  libgz-utils2-cli-dev_2.2.1-1~jammy_amd64.deb
 a2e760be9bc48dc6aeda1edd03377563fd778b320f714dc3401b624e5f1be62a  libgz-utils2-dev_2.2.1-1~jammy_amd64.deb
+becf463dc3bd7945c381bf8da3339a87b7d36cf81a112a4bc128d6d0b70c74d1  libsdformat14_14.9.0-1~jammy_amd64.deb
+4cbdb053f8daafd34ab3c91e5bd83f87b0644fc02e7b58b33d3446017374b528  libsdformat14-dev_14.9.0-1~jammy_amd64.deb
 37f792c775fe6c10d7c1e0d2651b494bdcfbb58769fbcd7623a77acf8a7ae841  python3-gz-math7_7.6.0-1~jammy_amd64.deb
 5b4f7698697bee5c0595db46c8dcec43a948980cff276fa0433e1043afce03b9  python3-gz-msgs10_10.3.2-1~jammy_amd64.deb
 09b0d981689cfecb82fa1bb80b281750edd68704da45bc94baafcbdcd13b7d9e  python3-gz-sim7_7.9.0-1~jammy_amd64.deb
 52cda85cd082d5ff44798ead50acc770cf5bb4045e76a725bf147480c0699c51  python3-gz-sim8_8.12.0-1~jammy_amd64.deb
 8e5048f7e8ed196274446856aaabd29d9ccd06ddeeff42af273a54f2e3da3fd0  python3-gz-transport13_13.5.0-1~jammy_amd64.deb
+46f77446975a64e604db30a9c5769775861c5e6158ef563f41311346549e0a9c  python3-sdformat14_14.9.0-1~jammy_amd64.deb
 755ffec1753ce5af89be6a1552fcb835596dbca3b8c15ee03ceab8dc74040446  ros-humble-ros-gz-bridge_0.244.24-1jammy.20260422.064121_amd64.deb
 6d6ddcb71176239d19c55a485a54a9bd9abf4d57b58c8ccce1cdcedfd413c39b  ros-humble-ros-gz-image_0.244.24-1jammy.20260422.073210_amd64.deb
 c946e7152334da6117e363d08a26b1b029111e8c862617c8a1088b6a627b9e09  ros-humble-ros-gz-interfaces_0.244.24-1jammy.20260414.035014_amd64.deb
