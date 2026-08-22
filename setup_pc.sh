@@ -174,6 +174,7 @@ echo "===== 6. Gazebo Harmonic exact version 설치 ====="
 
 sudo apt install -y \
     --allow-downgrades \
+    --allow-change-held-packages \
     "${HARMONIC_DEBS[@]}"
 
 sudo ldconfig
