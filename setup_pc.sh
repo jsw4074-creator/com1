@@ -2,12 +2,8 @@
 set -eo pipefail
 
 echo "========================================"
-echo " com1 새 PC 자동 설치 시작"
+echo " com1 재현 환경 자동 설치"
 echo "========================================"
-
-# --------------------------------------------------
-# 0. 기본 경로 / 고정 버전
-# --------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -19,11 +15,19 @@ GZ_WS="$HOME/gz_ws"
 
 CUSTOM_PX4_DIR="$COM1_DIR/custom_px4"
 GAZEBO_DEB_DIR="$COM1_DIR/gazebo_debs"
+HARMONIC_MANIFEST="$COM1_DIR/environment_snapshot/gazebo_harmonic_manifest.tsv"
 
 PX4_COMMIT="2253701d6a8aa771d6b436400007daefd51a4806"
 PX4_MSGS_COMMIT="a1045ec4feb6d709bdecaf3895f1d5b43a5dabb8"
 ROS_GZ_COMMIT="9d7f8c721c233a9ac8b43950129d51e67905523e"
 MICROXRCE_COMMIT="73622810d984349b80bbac0ef55fc0b694d62222"
+
+die()
+{
+    echo
+    echo "ERROR: $1"
+    exit 1
+}
 
 echo
 echo "[경로]"
@@ -34,27 +38,25 @@ echo "MicroXRCE  : $MICROXRCE_DIR"
 echo "ros_gz     : $GZ_WS"
 
 # --------------------------------------------------
-# 1. Ubuntu 버전 확인
+# 1. OS 확인
 # --------------------------------------------------
 
 echo
-echo "===== 1. Ubuntu 버전 확인 ====="
+echo "===== 1. Ubuntu 확인 ====="
 
 source /etc/os-release
 
-echo "OS: $PRETTY_NAME"
+echo "$PRETTY_NAME"
 
-if [ "${VERSION_ID:-}" != "22.04" ]; then
-    echo "ERROR: Ubuntu 22.04 전용 스크립트입니다."
-    exit 1
-fi
+[ "${VERSION_ID:-}" = "22.04" ] || \
+    die "Ubuntu 22.04가 아닙니다."
 
 # --------------------------------------------------
-# 2. 기본 패키지 설치
+# 2. 기본 도구
 # --------------------------------------------------
 
 echo
-echo "===== 2. 기본 개발 도구 설치 ====="
+echo "===== 2. 기본 개발 도구 ====="
 
 sudo apt update
 
@@ -79,103 +81,180 @@ sudo apt install -y \
     gnome-terminal
 
 # --------------------------------------------------
-# 3. ROS2 Humble 확인
+# 3. ROS2 Humble
 # --------------------------------------------------
 
 echo
-echo "===== 3. ROS2 Humble 확인 ====="
+echo "===== 3. ROS2 Humble ====="
 
-if [ ! -f /opt/ros/humble/setup.bash ]; then
-    echo "ERROR: ROS2 Humble이 설치되어 있지 않습니다."
-    exit 1
-fi
+[ -f /opt/ros/humble/setup.bash ] || \
+    die "ROS2 Humble이 설치되어 있지 않습니다."
 
 source /opt/ros/humble/setup.bash
 
-if [ "${ROS_DISTRO:-}" != "humble" ]; then
-    echo "ERROR: ROS_DISTRO가 humble이 아닙니다."
-    exit 1
-fi
+[ "${ROS_DISTRO:-}" = "humble" ] || \
+    die "ROS_DISTRO가 humble이 아닙니다."
 
 # --------------------------------------------------
-# 4. Gazebo DEB 무결성 확인
+# 4. Harmonic 백업 검사
 # --------------------------------------------------
 
 echo
-echo "===== 4. Gazebo DEB 무결성 확인 ====="
+echo "===== 4. Gazebo Harmonic 백업 검사 ====="
 
-if [ ! -d "$GAZEBO_DEB_DIR" ]; then
-    echo "ERROR: gazebo_debs 폴더 없음"
-    exit 1
-fi
+[ -d "$GAZEBO_DEB_DIR" ] || \
+    die "gazebo_debs 폴더가 없습니다."
+
+[ -f "$GAZEBO_DEB_DIR/SHA256SUMS" ] || \
+    die "SHA256SUMS가 없습니다."
+
+[ -f "$HARMONIC_MANIFEST" ] || \
+    die "gazebo_harmonic_manifest.tsv가 없습니다."
 
 cd "$GAZEBO_DEB_DIR"
 
-sha256sum -c SHA256SUMS
+sha256sum -c SHA256SUMS || \
+    die "Gazebo DEB SHA256 검증 실패"
+
+# Garden이 manifest에 들어가 있으면 중단
+if grep -Eq \
+'^(gz-garden|gz-sim7|gz-launch6|gz-transport12|libgz-gui7|libgz-launch6|libgz-msgs9|libgz-physics6|libgz-rendering7|libgz-sensors7|libgz-sim7|libgz-transport12|python3-gz-sim7)' \
+"$HARMONIC_MANIFEST"
+then
+    die "Harmonic manifest에 Garden 패키지가 포함되어 있습니다."
+fi
 
 # --------------------------------------------------
-# 5. Gazebo / ROS-GZ 고정 버전 설치
+# 5. Harmonic manifest의 정확한 DEB만 선택
 # --------------------------------------------------
 
 echo
-echo "===== 5. Gazebo 고정 버전 설치 ====="
+echo "===== 5. Harmonic 정확한 DEB 선택 ====="
 
-sudo apt install -y ./*.deb
+HARMONIC_DEBS=()
+HARMONIC_PACKAGES=()
+
+while IFS=$'\t' read -r pkg ver
+do
+    [ -z "$pkg" ] && continue
+
+    clean_pkg="${pkg%%:*}"
+
+    found=""
+
+    for deb in "$GAZEBO_DEB_DIR"/*.deb
+    do
+        deb_pkg="$(dpkg-deb -f "$deb" Package)"
+        deb_ver="$(dpkg-deb -f "$deb" Version)"
+
+        if [ "$deb_pkg" = "$clean_pkg" ] && \
+           [ "$deb_ver" = "$ver" ]
+        then
+            found="$deb"
+            break
+        fi
+    done
+
+    [ -n "$found" ] || \
+        die "DEB 없음: $clean_pkg $ver"
+
+    HARMONIC_DEBS+=("$found")
+    HARMONIC_PACKAGES+=("$clean_pkg")
+
+done < "$HARMONIC_MANIFEST"
+
+echo "설치 대상 Harmonic 패키지: ${#HARMONIC_DEBS[@]}"
+
+[ "${#HARMONIC_DEBS[@]}" -eq 114 ] || \
+    die "Harmonic 패키지 수가 114개가 아닙니다."
+
+# --------------------------------------------------
+# 6. Harmonic exact version 설치
+# --------------------------------------------------
+
+echo
+echo "===== 6. Gazebo Harmonic exact version 설치 ====="
+
+sudo apt install -y \
+    --allow-downgrades \
+    "${HARMONIC_DEBS[@]}"
 
 sudo ldconfig
 
 # --------------------------------------------------
-# 6. Gazebo 핵심 패키지 hold
+# 7. Harmonic 114개 전체 버전 확인
 # --------------------------------------------------
 
 echo
-echo "===== 6. Gazebo 버전 고정 ====="
+echo "===== 7. Harmonic 전체 버전 검증 ====="
 
-sudo apt-mark hold \
-    gz-sim8-cli \
-    libgz-sim8 \
-    libgz-sim8-dev \
-    libgz-sim8-plugins \
-    libgz-transport13 \
-    libgz-transport13-dev \
-    libgz-msgs10 \
-    libgz-msgs10-dev \
-    python3-gz-sim8 \
-    python3-gz-transport13 \
-    python3-gz-msgs10 \
-    ros-humble-ros-gz-bridge \
-    ros-humble-ros-gz-image \
-    ros-humble-ros-gz-interfaces
+while IFS=$'\t' read -r pkg expected
+do
+    [ -z "$pkg" ] && continue
+
+    clean_pkg="${pkg%%:*}"
+
+    actual="$(dpkg-query -W -f='${Version}' "$clean_pkg" 2>/dev/null || true)"
+
+    if [ "$actual" != "$expected" ]; then
+        echo "패키지 : $clean_pkg"
+        echo "기대값 : $expected"
+        echo "실제값 : $actual"
+        die "Gazebo Harmonic 버전 불일치"
+    fi
+
+done < "$HARMONIC_MANIFEST"
+
+echo "OK: Harmonic 114개 버전 일치"
+
+# 이후 apt / rosdep가 GZ를 바꾸지 못하도록 고정
+echo
+echo "===== 8. Harmonic 패키지 hold ====="
+
+sudo apt-mark hold "${HARMONIC_PACKAGES[@]}"
 
 # --------------------------------------------------
-# 7. PX4 clone + exact commit
+# 9. PX4
 # --------------------------------------------------
 
 echo
-echo "===== 7. PX4 설치 ====="
+echo "===== 9. PX4 exact commit ====="
+
+# GitHub 배포본에 들어있는 flattened PX4를 제거하고
+# 공식 PX4 Git repository로 교체
+if [ -d "$PX4_DIR" ] && [ ! -d "$PX4_DIR/.git" ]; then
+    echo "비-Git PX4 배포 폴더를 공식 PX4 clone으로 교체합니다."
+    rm -rf "$PX4_DIR"
+fi
 
 if [ ! -d "$PX4_DIR/.git" ]; then
-    git clone https://github.com/PX4/PX4-Autopilot.git "$PX4_DIR"
+    git clone \
+        https://github.com/PX4/PX4-Autopilot.git \
+        "$PX4_DIR"
 fi
 
 cd "$PX4_DIR"
 
 git fetch --all --tags
-git checkout "$PX4_COMMIT"
+git checkout --force "$PX4_COMMIT"
 
 git submodule sync --recursive
 git submodule update --init --recursive
 
-echo "PX4 commit:"
-git rev-parse HEAD
+PX4_NOW="$(git rev-parse HEAD)"
+
+[ "$PX4_NOW" = "$PX4_COMMIT" ] || \
+    die "PX4 commit 불일치"
+
+echo "PX4: $PX4_NOW"
 
 # --------------------------------------------------
-# 8. PX4 개발 환경
-# Gazebo는 설치하지 않음
+# 10. PX4 개발 의존성
+# Gazebo 설치는 금지
 # --------------------------------------------------
 
 echo
-echo "===== 8. PX4 개발 도구 설치 ====="
+echo "===== 10. PX4 개발 의존성 ====="
 
 cd "$PX4_DIR"
 
@@ -183,47 +262,62 @@ bash Tools/setup/ubuntu.sh \
     --no-sim-tools \
     --no-nuttx
 
+# 다시 한번 Gazebo 버전 확인
+while IFS=$'\t' read -r pkg expected
+do
+    [ -z "$pkg" ] && continue
+
+    clean_pkg="${pkg%%:*}"
+    actual="$(dpkg-query -W -f='${Version}' "$clean_pkg" 2>/dev/null || true)"
+
+    [ "$actual" = "$expected" ] || \
+        die "PX4 setup 이후 Gazebo 버전이 변경되었습니다: $clean_pkg"
+
+done < "$HARMONIC_MANIFEST"
+
 # --------------------------------------------------
-# 9. custom PX4 파일 적용
+# 11. 사용자 PX4 코드
 # --------------------------------------------------
 
 echo
-echo "===== 9. 사용자 PX4 코드 적용 ====="
+echo "===== 11. 사용자 PX4 코드 적용 ====="
 
-if [ ! -d "$CUSTOM_PX4_DIR/New_code" ]; then
-    echo "ERROR: custom_px4/New_code 없음"
-    exit 1
-fi
+[ -d "$CUSTOM_PX4_DIR/New_code" ] || \
+    die "custom_px4/New_code 없음"
 
-if [ ! -d "$CUSTOM_PX4_DIR/navigation" ]; then
-    echo "ERROR: custom_px4/navigation 없음"
-    exit 1
-fi
+[ -d "$CUSTOM_PX4_DIR/navigation" ] || \
+    die "custom_px4/navigation 없음"
 
-if [ ! -d "$CUSTOM_PX4_DIR/Tools/simulation/gz" ]; then
-    echo "ERROR: custom Gazebo 파일 없음"
-    exit 1
-fi
+[ -d "$CUSTOM_PX4_DIR/Tools/simulation/gz" ] || \
+    die "custom_px4/Tools/simulation/gz 없음"
 
 rm -rf "$PX4_DIR/New_code"
 rm -rf "$PX4_DIR/navigation"
 rm -rf "$PX4_DIR/Tools/simulation/gz"
 
-cp -a "$CUSTOM_PX4_DIR/New_code" "$PX4_DIR/"
-cp -a "$CUSTOM_PX4_DIR/navigation" "$PX4_DIR/"
+cp -a "$CUSTOM_PX4_DIR/New_code" \
+      "$PX4_DIR/"
+
+cp -a "$CUSTOM_PX4_DIR/navigation" \
+      "$PX4_DIR/"
 
 mkdir -p "$PX4_DIR/Tools/simulation"
 
-cp -a \
-    "$CUSTOM_PX4_DIR/Tools/simulation/gz" \
-    "$PX4_DIR/Tools/simulation/"
+cp -a "$CUSTOM_PX4_DIR/Tools/simulation/gz" \
+      "$PX4_DIR/Tools/simulation/"
 
 # --------------------------------------------------
-# 10. MicroXRCE-DDS-Agent
+# 12. MicroXRCE-DDS-Agent
 # --------------------------------------------------
 
 echo
-echo "===== 10. MicroXRCE-DDS-Agent 설치 ====="
+echo "===== 12. MicroXRCE-DDS-Agent ====="
+
+if [ -d "$MICROXRCE_DIR" ] && \
+   [ ! -d "$MICROXRCE_DIR/.git" ]
+then
+    rm -rf "$MICROXRCE_DIR"
+fi
 
 if [ ! -d "$MICROXRCE_DIR/.git" ]; then
     git clone \
@@ -234,10 +328,15 @@ fi
 cd "$MICROXRCE_DIR"
 
 git fetch --all --tags
-git checkout "$MICROXRCE_COMMIT"
+git checkout --force "$MICROXRCE_COMMIT"
 
-echo "MicroXRCE commit:"
-git rev-parse HEAD
+git submodule sync --recursive
+git submodule update --init --recursive
+
+MICRO_NOW="$(git rev-parse HEAD)"
+
+[ "$MICRO_NOW" = "$MICROXRCE_COMMIT" ] || \
+    die "MicroXRCE commit 불일치"
 
 rm -rf build
 mkdir build
@@ -246,19 +345,23 @@ cd build
 cmake ..
 make -j"$(nproc)"
 
-if [ ! -x "$MICROXRCE_DIR/build/MicroXRCEAgent" ]; then
-    echo "ERROR: MicroXRCEAgent 빌드 실패"
-    exit 1
-fi
+[ -x "$MICROXRCE_DIR/build/MicroXRCEAgent" ] || \
+    die "MicroXRCEAgent 빌드 실패"
 
 # --------------------------------------------------
-# 11. ros_gz exact commit 빌드
+# 13. ros_gz exact commit
 # --------------------------------------------------
 
 echo
-echo "===== 11. ros_gz 빌드 ====="
+echo "===== 13. ros_gz exact commit ====="
 
 mkdir -p "$GZ_WS/src"
+
+if [ -d "$GZ_WS/src/ros_gz" ] && \
+   [ ! -d "$GZ_WS/src/ros_gz/.git" ]
+then
+    rm -rf "$GZ_WS/src/ros_gz"
+fi
 
 if [ ! -d "$GZ_WS/src/ros_gz/.git" ]; then
     git clone \
@@ -269,10 +372,12 @@ fi
 cd "$GZ_WS/src/ros_gz"
 
 git fetch --all --tags
-git checkout "$ROS_GZ_COMMIT"
+git checkout --force "$ROS_GZ_COMMIT"
 
-echo "ros_gz commit:"
-git rev-parse HEAD
+ROS_GZ_NOW="$(git rev-parse HEAD)"
+
+[ "$ROS_GZ_NOW" = "$ROS_GZ_COMMIT" ] || \
+    die "ros_gz commit 불일치"
 
 cd "$GZ_WS"
 
@@ -288,27 +393,42 @@ rosdep install \
     -y \
     --rosdistro humble
 
+# rosdep 이후 Harmonic 재검증
+while IFS=$'\t' read -r pkg expected
+do
+    [ -z "$pkg" ] && continue
+
+    clean_pkg="${pkg%%:*}"
+    actual="$(dpkg-query -W -f='${Version}' "$clean_pkg" 2>/dev/null || true)"
+
+    [ "$actual" = "$expected" ] || \
+        die "rosdep 이후 Gazebo 버전 변경: $clean_pkg"
+
+done < "$HARMONIC_MANIFEST"
+
 rm -rf build install log
 
 colcon build
 
-if [ ! -f "$GZ_WS/install/setup.bash" ]; then
-    echo "ERROR: ros_gz 빌드 실패"
-    exit 1
-fi
+[ -f "$GZ_WS/install/setup.bash" ] || \
+    die "ros_gz 빌드 실패"
 
 # --------------------------------------------------
-# 12. px4_msgs exact commit 구성 및 빌드
+# 14. px4_msgs
 # --------------------------------------------------
 
 echo
-echo "===== 12. px4_msgs 구성 및 빌드 ====="
+echo "===== 14. px4_msgs exact commit ====="
 
 mkdir -p "$PX4_MSGS_WS/src"
 
-if [ ! -d "$PX4_MSGS_WS/src/px4_msgs/.git" ]; then
+if [ -d "$PX4_MSGS_WS/src/px4_msgs" ] && \
+   [ ! -d "$PX4_MSGS_WS/src/px4_msgs/.git" ]
+then
     rm -rf "$PX4_MSGS_WS/src/px4_msgs"
+fi
 
+if [ ! -d "$PX4_MSGS_WS/src/px4_msgs/.git" ]; then
     git clone \
         https://github.com/PX4/px4_msgs.git \
         "$PX4_MSGS_WS/src/px4_msgs"
@@ -317,10 +437,12 @@ fi
 cd "$PX4_MSGS_WS/src/px4_msgs"
 
 git fetch --all --tags
-git checkout "$PX4_MSGS_COMMIT"
+git checkout --force "$PX4_MSGS_COMMIT"
 
-echo "px4_msgs commit:"
-git rev-parse HEAD
+PX4_MSGS_NOW="$(git rev-parse HEAD)"
+
+[ "$PX4_MSGS_NOW" = "$PX4_MSGS_COMMIT" ] || \
+    die "px4_msgs commit 불일치"
 
 cd "$PX4_MSGS_WS"
 
@@ -330,17 +452,15 @@ rm -rf build install log
 
 colcon build
 
-if [ ! -f "$PX4_MSGS_WS/install/setup.bash" ]; then
-    echo "ERROR: ws_px4_msgs 빌드 실패"
-    exit 1
-fi
+[ -f "$PX4_MSGS_WS/install/setup.bash" ] || \
+    die "px4_msgs 빌드 실패"
 
 # --------------------------------------------------
-# 13. Python 패키지
+# 15. Python
 # --------------------------------------------------
 
 echo
-echo "===== 13. Python 패키지 설치 ====="
+echo "===== 15. Python 환경 ====="
 
 python3 -m pip install --user \
     numpy==1.26.4 \
@@ -352,134 +472,134 @@ sudo apt install -y \
     python3-yaml
 
 # --------------------------------------------------
-# 14. 핵심 버전 검증
+# 16. Python exact version 확인
 # --------------------------------------------------
 
 echo
-echo "===== 14. 버전 검증 ====="
+echo "===== 16. Python 버전 검증 ====="
 
-CHECK_GZ_SIM="$(dpkg-query -W -f='${Version}' gz-sim8-cli)"
-CHECK_GZ_TRANSPORT="$(dpkg-query -W -f='${Version}' libgz-transport13)"
-CHECK_GZ_MSGS="$(dpkg-query -W -f='${Version}' libgz-msgs10)"
+python3 - <<'PY'
+import sys
+import numpy
+import cv2
+import pandas
+import yaml
+import scipy
+import rclpy
 
-echo "gz-sim8-cli    : $CHECK_GZ_SIM"
-echo "transport13    : $CHECK_GZ_TRANSPORT"
-echo "msgs10         : $CHECK_GZ_MSGS"
+expected = {
+    "Python": "3.10.12",
+    "numpy": "1.26.4",
+    "opencv": "4.8.1",
+    "pandas": "2.3.3",
+    "PyYAML": "5.4.1",
+    "scipy": "1.8.0",
+    "rclpy": "3.3.21",
+}
 
-if [[ "$CHECK_GZ_SIM" != 8.12.0-* ]]; then
-    echo "ERROR: gz-sim8 버전 불일치"
-    exit 1
-fi
+actual = {
+    "Python": ".".join(map(str, sys.version_info[:3])),
+    "numpy": numpy.__version__,
+    "opencv": cv2.__version__,
+    "pandas": pandas.__version__,
+    "PyYAML": yaml.__version__,
+    "scipy": scipy.__version__,
+    "rclpy": rclpy.__version__,
+}
 
-if [[ "$CHECK_GZ_TRANSPORT" != 13.5.0-* ]]; then
-    echo "ERROR: transport13 버전 불일치"
-    exit 1
-fi
+failed = False
 
-if [[ "$CHECK_GZ_MSGS" != 10.3.2-* ]]; then
-    echo "ERROR: msgs10 버전 불일치"
-    exit 1
-fi
+for key in expected:
+    print(f"{key:10s}: {actual[key]}")
+
+    if actual[key] != expected[key]:
+        print(
+            f"ERROR: {key} "
+            f"expected={expected[key]} "
+            f"actual={actual[key]}"
+        )
+        failed = True
+
+if failed:
+    raise SystemExit(1)
+PY
+
+[ "$?" -eq 0 ] || \
+    die "Python 버전 불일치"
 
 # --------------------------------------------------
-# 15. Git commit 검증
+# 17. 전체 Git commit 최종 검증
 # --------------------------------------------------
 
 echo
-echo "===== 15. Git commit 검증 ====="
+echo "===== 17. Git commit 최종 검증 ====="
 
 PX4_NOW="$(git -C "$PX4_DIR" rev-parse HEAD)"
 PX4_MSGS_NOW="$(git -C "$PX4_MSGS_WS/src/px4_msgs" rev-parse HEAD)"
 ROS_GZ_NOW="$(git -C "$GZ_WS/src/ros_gz" rev-parse HEAD)"
-MICROXRCE_NOW="$(git -C "$MICROXRCE_DIR" rev-parse HEAD)"
+MICRO_NOW="$(git -C "$MICROXRCE_DIR" rev-parse HEAD)"
 
-echo "PX4        : $PX4_NOW"
-echo "px4_msgs   : $PX4_MSGS_NOW"
-echo "ros_gz     : $ROS_GZ_NOW"
-echo "MicroXRCE  : $MICROXRCE_NOW"
+echo "PX4       : $PX4_NOW"
+echo "px4_msgs  : $PX4_MSGS_NOW"
+echo "ros_gz    : $ROS_GZ_NOW"
+echo "MicroXRCE : $MICRO_NOW"
 
-if [ "$PX4_NOW" != "$PX4_COMMIT" ]; then
-    echo "ERROR: PX4 commit 불일치"
-    exit 1
-fi
+[ "$PX4_NOW" = "$PX4_COMMIT" ] || \
+    die "PX4 최종 commit 불일치"
 
-if [ "$PX4_MSGS_NOW" != "$PX4_MSGS_COMMIT" ]; then
-    echo "ERROR: px4_msgs commit 불일치"
-    exit 1
-fi
+[ "$PX4_MSGS_NOW" = "$PX4_MSGS_COMMIT" ] || \
+    die "px4_msgs 최종 commit 불일치"
 
-if [ "$ROS_GZ_NOW" != "$ROS_GZ_COMMIT" ]; then
-    echo "ERROR: ros_gz commit 불일치"
-    exit 1
-fi
+[ "$ROS_GZ_NOW" = "$ROS_GZ_COMMIT" ] || \
+    die "ros_gz 최종 commit 불일치"
 
-if [ "$MICROXRCE_NOW" != "$MICROXRCE_COMMIT" ]; then
-    echo "ERROR: MicroXRCE commit 불일치"
-    exit 1
-fi
+[ "$MICRO_NOW" = "$MICROXRCE_COMMIT" ] || \
+    die "MicroXRCE 최종 commit 불일치"
 
 # --------------------------------------------------
-# 16. 실행 환경 최종 확인
+# 18. 최종 실행 검사
 # --------------------------------------------------
 
 echo
-echo "===== 16. 실행 환경 확인 ====="
+echo "===== 18. 최종 실행 환경 검사 ====="
 
 source /opt/ros/humble/setup.bash
 source "$GZ_WS/install/setup.bash"
 source "$PX4_MSGS_WS/install/setup.bash"
 
-echo
-echo "[Gazebo]"
-gz sim --version || true
+GZ_VERSION="$(gz sim --version | head -1)"
 
-echo
-echo "[ros_gz_bridge]"
-ros2 pkg prefix ros_gz_bridge || true
+echo "$GZ_VERSION"
 
-echo
-echo "[ros_gz_image]"
-ros2 pkg prefix ros_gz_image || true
+echo "$GZ_VERSION" | grep -q "8.12.0" || \
+    die "Gazebo Sim 8.12.0이 아닙니다."
 
-echo
-echo "[MicroXRCEAgent]"
-ls -lh "$MICROXRCE_DIR/build/MicroXRCEAgent"
+ros2 pkg prefix ros_gz_bridge >/dev/null || \
+    die "ros_gz_bridge 없음"
 
-echo
-echo "[PX4]"
-ls -ld "$PX4_DIR"
+ros2 pkg prefix ros_gz_image >/dev/null || \
+    die "ros_gz_image 없음"
 
-echo
-echo "[px4_msgs]"
-ls -ld "$PX4_MSGS_WS/install"
+[ -x "$MICROXRCE_DIR/build/MicroXRCEAgent" ] || \
+    die "MicroXRCEAgent 없음"
 
-# --------------------------------------------------
-# 완료
-# --------------------------------------------------
+[ -f "$COM1_DIR/run7.sh" ] || \
+    die "run7.sh 없음"
+
+chmod +x "$COM1_DIR/run7.sh"
 
 echo
 echo "========================================"
-echo " 설치 완료"
+echo " SETUP SUCCESS"
 echo "========================================"
-
 echo
-echo "PX4:"
-echo "$PX4_DIR"
-
+echo "Gazebo Harmonic : 8.12.0"
+echo "PX4             : $PX4_COMMIT"
+echo "px4_msgs        : $PX4_MSGS_COMMIT"
+echo "ros_gz          : $ROS_GZ_COMMIT"
+echo "MicroXRCE       : $MICROXRCE_COMMIT"
 echo
-echo "px4_msgs:"
-echo "$PX4_MSGS_WS"
-
-echo
-echo "MicroXRCEAgent:"
-echo "$MICROXRCE_DIR/build/MicroXRCEAgent"
-
-echo
-echo "ros_gz:"
-echo "$GZ_WS"
-
-echo
-echo "다음 실행:"
+echo "실행:"
 echo "cd $COM1_DIR"
 echo "./run7.sh"
 echo
