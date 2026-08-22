@@ -226,7 +226,7 @@ fi
 
 if [ ! -d "$PX4_DIR/.git" ]; then
     git clone \
-        https://github.com/PX4/PX4-Autopilot.git \
+        https://github.com/jsw4074-creator/Px4_drone_project.git \
         "$PX4_DIR"
 fi
 
