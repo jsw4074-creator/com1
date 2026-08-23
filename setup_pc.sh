@@ -236,6 +236,12 @@ cd "$PX4_DIR"
 git fetch --all --tags
 git checkout --force "$PX4_COMMIT"
 
+if ! git remote get-url upstream >/dev/null 2>&1; then
+    git remote add upstream https://github.com/PX4/PX4-Autopilot.git
+fi
+
+git fetch upstream --tags
+
 git submodule sync --recursive
 
 mapfile -t PX4_SUBMODULES < <(
