@@ -237,7 +237,16 @@ git fetch --all --tags
 git checkout --force "$PX4_COMMIT"
 
 git submodule sync --recursive
-git submodule update --init --recursive
+
+mapfile -t PX4_SUBMODULES < <(
+    git config -f .gitmodules --get-regexp '^submodule\..*\.path$' |
+    awk '{print $2}'
+)
+
+[ "${#PX4_SUBMODULES[@]}" -gt 0 ] || \
+    die "PX4 .gitmodules에서 submodule을 찾지 못했습니다."
+
+git submodule update --init --recursive -- "${PX4_SUBMODULES[@]}"
 
 PX4_NOW="$(git rev-parse HEAD)"
 
