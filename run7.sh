@@ -1,5 +1,9 @@
 #!/bin/bash
 
+unset GZ_SIM_RESOURCE_PATH
+unset IGN_GAZEBO_RESOURCE_PATH
+
+
 # 터미널 1 - Gazebo / PX4 SITL
 gnome-terminal -- bash -c "
 cd ~/Desktop/com1/PX4-Autopilot &&

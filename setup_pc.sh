@@ -421,6 +421,15 @@ done < "$HARMONIC_MANIFEST"
 
 rm -rf build install log
 
+unset AMENT_PREFIX_PATH
+unset CMAKE_PREFIX_PATH
+unset COLCON_PREFIX_PATH
+unset LD_LIBRARY_PATH
+unset PYTHONPATH
+
+source /opt/ros/humble/setup.bash
+export GZ_VERSION=harmonic
+
 colcon build
 
 [ -f "$GZ_WS/install/setup.bash" ] || \
